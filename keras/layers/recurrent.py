@@ -54,7 +54,7 @@ class Recurrent(Layer):
         # as the first layer in a Sequential model
         model = Sequential()
         model.add(LSTM(32, input_shape=(10, 64)))
-        # now model.output_shape == (None, 10, 32)
+        # now model.output_shape == (None, 32)
         # note: `None` is the batch dimension.
 
         # the following is identical:
@@ -66,7 +66,7 @@ class Recurrent(Layer):
     ```
 
     # Arguments
-        weights: list of numpy arrays to set as initial weights.
+        weights: list of Numpy arrays to set as initial weights.
             The list should have 3 elements, of shapes:
             `[(input_dim, output_dim), (output_dim, output_dim), (output_dim,)]`.
         return_sequences: Boolean. Whether to return the last output
@@ -85,11 +85,9 @@ class Recurrent(Layer):
             If set to "cpu", the RNN will use
             an implementation that uses fewer, larger matrix products,
             thus running faster on CPU but consuming more memory.
-
             If set to "mem", the RNN will use more matrix products,
             but smaller ones, thus running slower (may actually be faster on GPU)
             while consuming less memory.
-
             If set to "gpu" (LSTM/GRU only), the RNN will combine the input gate,
             the forget gate and the output gate into a single matrix,
             enabling more time-efficient parallelization on the GPU. Note: RNN
@@ -141,7 +139,10 @@ class Recurrent(Layer):
         To enable statefulness:
             - specify `stateful=True` in the layer constructor.
             - specify a fixed batch size for your model, by passing
-                a `batch_input_shape=(...)` to the first layer in your model.
+                if sequential model:
+                  a `batch_input_shape=(...)` to the first layer in your model.
+                else for functional model with 1 or more Input layers:
+                  a `batch_shape=(...)` to all the first layers in your model.
                 This is the expected shape of your inputs *including the batch size*.
                 It should be a tuple of integers, e.g. `(32, 10, 100)`.
 
@@ -192,9 +193,9 @@ class Recurrent(Layer):
     def get_initial_states(self, x):
         # build an all-zero tensor of shape (samples, output_dim)
         initial_state = K.zeros_like(x)  # (samples, timesteps, input_dim)
-        initial_state = K.sum(initial_state, axis=1)  # (samples, input_dim)
-        reducer = K.zeros((self.input_dim, self.output_dim))
-        initial_state = K.dot(initial_state, reducer)  # (samples, output_dim)
+        initial_state = K.sum(initial_state, axis=(1, 2))  # (samples,)
+        initial_state = K.expand_dims(initial_state)  # (samples, 1)
+        initial_state = K.tile(initial_state, [1, self.output_dim])  # (samples, output_dim)
         initial_states = [initial_state for _ in range(len(self.states))]
         return initial_states
 
@@ -691,7 +692,7 @@ class LSTM(Recurrent):
                                      name='{}_U'.format(self.name))
 
             self.b = K.variable(np.hstack((np.zeros(self.output_dim),
-                                           K.get_value(self.forget_bias_init(self.output_dim)),
+                                           K.get_value(self.forget_bias_init((self.output_dim,))),
                                            np.zeros(self.output_dim),
                                            np.zeros(self.output_dim))),
                                 name='{}_b'.format(self.name))
